@@ -242,26 +242,33 @@
           return;
         }
 
-        let tableHtml = '<table class="table table-striped table-hover table-sm small">';
+        let tableHtml = '<div class="table-responsive"><table class="table table-striped table-hover table-sm small">';
         tableHtml += `
           <thead class="table-dark">
-            <tr>
-              <th colspan="5" class="text-center">CALLS</th>
-              <th class="bg-secondary">Strike</th>
-              <th colspan="5" class="text-center">PUTS</th>
+            <tr class="text-center">
+              <th colspan="9">CALLS</th>
+              <th class="bg-secondary align-middle" rowspan="2">Strike</th>
+              <th colspan="9">PUTS</th>
             </tr>
-            <tr>
+            <tr class="text-center">
+              <th>Delta</th>
+              <th>Gamma</th>
+              <th>Vega</th>
+              <th>Theta</th>
+              <th>IV</th>
               <th>OI</th>
               <th>Chng in OI</th>
-              <th>IV</th>
+              <th>Volume</th>
               <th>LTP</th>
-              <th>Chng</th>
-              <th class="bg-secondary">Price</th>
-              <th>Chng</th>
               <th>LTP</th>
-              <th>IV</th>
+              <th>Volume</th>
               <th>Chng in OI</th>
               <th>OI</th>
+              <th>IV</th>
+              <th>Theta</th>
+              <th>Vega</th>
+              <th>Gamma</th>
+              <th>Delta</th>
             </tr>
           </thead>
           <tbody>
@@ -271,23 +278,33 @@
           const ce = item.CE || {};
           const pe = item.PE || {};
           tableHtml += `
-            <tr>
+            <tr class="text-center">
+              <td>${ce.delta ? ce.delta.toFixed(2) : '-'}</td>
+              <td>${ce.gamma ? ce.gamma.toFixed(4) : '-'}</td>
+              <td>${ce.vega ? ce.vega.toFixed(2) : '-'}</td>
+              <td>${ce.theta ? ce.theta.toFixed(2) : '-'}</td>
+              <td>${ce.impliedVolatility || '-'}</td>
               <td>${ce.openInterest || '-'}</td>
               <td>${ce.changeinOpenInterest || '-'}</td>
-              <td>${ce.impliedVolatility || '-'}</td>
-              <td>${ce.lastPrice || '-'}</td>
-              <td class="${(ce.change || 0) >= 0 ? 'text-success' : 'text-danger'}">${ce.change || '-'}</td>
-              <th class="bg-light">${item.strikePrice}</th>
-              <td class="${(pe.change || 0) >= 0 ? 'text-success' : 'text-danger'}">${pe.change || '-'}</td>
-              <td>${pe.lastPrice || '-'}</td>
-              <td>${pe.impliedVolatility || '-'}</td>
+              <td>${ce.totalTradedVolume || '-'}</td>
+              <td class="${(ce.change || 0) >= 0 ? 'text-success' : 'text-danger'}">${ce.lastPrice || '-'}</td>
+
+              <th class="bg-light align-middle">${item.strikePrice}</th>
+
+              <td class="${(pe.change || 0) >= 0 ? 'text-success' : 'text-danger'}">${pe.lastPrice || '-'}</td>
+              <td>${pe.totalTradedVolume || '-'}</td>
               <td>${pe.changeinOpenInterest || '-'}</td>
               <td>${pe.openInterest || '-'}</td>
+              <td>${pe.impliedVolatility || '-'}</td>
+              <td>${pe.theta ? pe.theta.toFixed(2) : '-'}</td>
+              <td>${pe.vega ? pe.vega.toFixed(2) : '-'}</td>
+              <td>${pe.gamma ? pe.gamma.toFixed(4) : '-'}</td>
+              <td>${pe.delta ? pe.delta.toFixed(2) : '-'}</td>
             </tr>
           `;
         });
 
-        tableHtml += '</tbody></table>';
+        tableHtml += '</tbody></table></div>';
         tableContainer.innerHTML = tableHtml;
       }
 

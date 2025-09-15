@@ -1,7 +1,41 @@
 from flask import Flask, render_template, jsonify
 from nsepython import nse_option_chain, nse_get_quote, nse_get_index_quote
+from datetime import datetime
+from vollib.black_scholes.greeks import analytical
 
 app = Flask(__name__)
+
+def calculate_greeks_for_option(option, underlying_value, risk_free_rate):
+    """
+    Calculates the greeks for a single option contract.
+    """
+    try:
+        S = underlying_value
+        K = option['strikePrice']
+        sigma = option['impliedVolatility'] / 100 # Convert from percentage
+        flag = 'c' if option['optionType'] == 'Call' else 'p'
+
+        # Calculate time to expiration in years
+        expiry_date = datetime.strptime(option['expiryDate'], '%d-%b-%Y')
+        time_to_expiry = (expiry_date - datetime.now()).days / 365.25
+
+        # If time to expiry is negative or zero, greeks are not meaningful
+        if time_to_expiry <= 0:
+            return {}
+
+        # Calculate greeks using vollib
+        greeks = {
+            'delta': analytical.delta(flag, S, K, time_to_expiry, risk_free_rate, sigma),
+            'gamma': analytical.gamma(flag, S, K, time_to_expiry, risk_free_rate, sigma),
+            'vega': analytical.vega(flag, S, K, time_to_expiry, risk_free_rate, sigma),
+            'theta': analytical.theta(flag, S, K, time_to_expiry, risk_free_rate, sigma)
+        }
+        return greeks
+    except Exception as e:
+        # This can happen if IV is 0 or other data is missing/invalid
+        # print(f"Could not calculate greeks for strike {option['strikePrice']}: {e}")
+        return {}
+
 
 def calculate_max_pain(data):
     """
@@ -57,6 +91,19 @@ def get_option_chain(symbol):
         # Add max_pain to the response
         response_data = oc_data
         response_data['records']['maxPain'] = max_pain
+
+        # Calculate Greeks for each option
+        underlying_value = response_data['records']['underlyingValue']
+        risk_free_rate = 0.05 # Assume 5% risk-free rate
+
+        for record in response_data['records']['data']:
+            if 'CE' in record and record['CE']:
+                ce_greeks = calculate_greeks_for_option(record['CE'], underlying_value, risk_free_rate)
+                record['CE'].update(ce_greeks)
+
+            if 'PE' in record and record['PE']:
+                pe_greeks = calculate_greeks_for_option(record['PE'], underlying_value, risk_free_rate)
+                record['PE'].update(pe_greeks)
 
         return jsonify(response_data)
     except Exception as e:
