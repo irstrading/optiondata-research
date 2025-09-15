@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>IQRA OPTION ANALYZER</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+      <div class="container-fluid">
+        <a class="navbar-brand" href="#">IQRA OPTION ANALYZER</a>
+      </div>
+    </nav>
+
+    <div class="container mt-4">
+      <h1 class="mb-4">Market Analysis Dashboard</h1>
+
+      <!-- Section for Index Overview -->
+      <div class="row mb-4">
+        <div class="col-md-6">
+          <div class="card">
+            <div class="card-header">NIFTY 50</div>
+            <div class="card-body" id="nifty50-card">
+              <p class="card-text">Current Price: Loading...</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card">
+            <div class="card-header">BANK NIFTY</div>
+            <div class="card-body" id="banknifty-card">
+              <p class="card-text">Current Price: Loading...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section for Symbol Input and Analysis -->
+      <div class="row mb-4">
+        <div class="col">
+          <div class="input-group">
+            <input type="text" class="form-control" placeholder="Enter Stock Symbol (e.g., NIFTY)" id="symbol-input">
+            <button class="btn btn-primary" type="button" id="fetch-data-btn">Fetch Data</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section for Key Metrics -->
+      <div id="metrics-section" class="row mb-4" style="display: none;">
+        <div class="col-md-4">
+            <div class="card text-center">
+                <div class="card-header">PCR (Put-Call Ratio)</div>
+                <div class="card-body">
+                    <h5 class="card-title" id="pcr-value">--</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center">
+                <div class="card-header">Max Pain</div>
+                <div class="card-body">
+                    <h5 class="card-title" id="max-pain-value">--</h5>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- Section for OI Chart -->
+      <div id="oi-chart-section" class="row mb-4" style="display: none;">
+        <div class="col">
+            <div class="card">
+                <div class="card-header">Open Interest by Strike Price</div>
+                <div class="card-body">
+                    <canvas id="oiChart"></canvas>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- Section for Option Chain Table -->
+      <div id="option-chain-section" class="row" style="display: none;">
+        <div class="col">
+          <h2>Option Chain</h2>
+          <div id="option-chain-table">Loading...</div>
+        </div>
+      </div>
+
+       <!-- Section for Weekly Watchlist -->
+      <div class="row mt-5">
+        <div class="col">
+          <h2>Weekly Watchlist</h2>
+          <table class="table table-striped">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Reason</th>
+                <th>Current Price</th>
+                <th>Volume</th>
+                <th>OI Change</th>
+              </tr>
+            </thead>
+            <tbody id="watchlist-body">
+              <!-- Watchlist data will be populated here -->
+              <tr><td colspan="5">Loading watchlist...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+      let oiChartInstance = null; // To hold the chart instance
+
+      document.getElementById('fetch-data-btn').addEventListener('click', () => {
+        const symbol = document.getElementById('symbol-input').value.trim();
+        if (!symbol) {
+          alert('Please enter a symbol.');
+          return;
+        }
+
+        // Show loading state and hide old data
+        document.getElementById('option-chain-table').innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+        document.getElementById('metrics-section').style.display = 'none';
+        document.getElementById('oi-chart-section').style.display = 'none';
+        document.getElementById('option-chain-section').style.display = 'block';
+        document.getElementById('pcr-value').textContent = '--';
+
+
+        fetch(`/api/option-chain/${symbol}`)
+          .then(response => {
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+          })
+          .then(data => {
+            if (data.error) {
+                document.getElementById('option-chain-table').innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                return;
+            }
+
+            const recordsData = data.records.data;
+            const maxPainValue = data.records.maxPain;
+
+            // Unhide sections
+            document.getElementById('metrics-section').style.display = 'flex'; // flex to align items properly
+            document.getElementById('oi-chart-section').style.display = 'block';
+
+            // Render all components
+            renderOptionChain(recordsData);
+            calculateAndDisplayPCR(recordsData);
+            renderOIChart(recordsData);
+            displayMaxPain(maxPainValue);
+          })
+          .catch(error => {
+            console.error('Fetch error:', error);
+            document.getElementById('option-chain-table').innerHTML = `<div class="alert alert-danger">Failed to fetch data. See console for details.</div>`;
+          });
+      });
+
+      function calculateAndDisplayPCR(data) {
+        let totalCallOI = 0;
+        let totalPutOI = 0;
+
+        data.forEach(item => {
+            if (item.CE && item.CE.openInterest) {
+                totalCallOI += item.CE.openInterest;
+            }
+            if (item.PE && item.PE.openInterest) {
+                totalPutOI += item.PE.openInterest;
+            }
+        });
+
+        const pcr = totalCallOI > 0 ? (totalPutOI / totalCallOI) : 0;
+        document.getElementById('pcr-value').textContent = pcr.toFixed(2);
+      }
+
+      function displayMaxPain(maxPainValue) {
+        document.getElementById('max-pain-value').textContent = maxPainValue ? maxPainValue.toLocaleString('en-IN') : '--';
+      }
+
+      function renderOIChart(data) {
+        const ctx = document.getElementById('oiChart').getContext('2d');
+
+        // Destroy the old chart instance if it exists
+        if (oiChartInstance) {
+            oiChartInstance.destroy();
+        }
+
+        const labels = data.map(item => item.strikePrice);
+        const callOiData = data.map(item => (item.CE ? item.CE.openInterest : 0));
+        const putOiData = data.map(item => (item.PE ? item.PE.openInterest : 0));
+
+        oiChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Call OI',
+                        data: callOiData,
+                        backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Put OI',
+                        data: putOiData,
+                        backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                },
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+      }
+
+      function renderOptionChain(data) {
+        const tableContainer = document.getElementById('option-chain-table');
+        if (!data || data.length === 0) {
+          tableContainer.innerHTML = '<div class="alert alert-warning">No option data available to display.</div>';
+          return;
+        }
+
+        let tableHtml = '<table class="table table-striped table-hover table-sm small">';
+        tableHtml += `
+          <thead class="table-dark">
+            <tr>
+              <th colspan="5" class="text-center">CALLS</th>
+              <th class="bg-secondary">Strike</th>
+              <th colspan="5" class="text-center">PUTS</th>
+            </tr>
+            <tr>
+              <th>OI</th>
+              <th>Chng in OI</th>
+              <th>IV</th>
+              <th>LTP</th>
+              <th>Chng</th>
+              <th class="bg-secondary">Price</th>
+              <th>Chng</th>
+              <th>LTP</th>
+              <th>IV</th>
+              <th>Chng in OI</th>
+              <th>OI</th>
+            </tr>
+          </thead>
+          <tbody>
+        `;
+
+        data.forEach(item => {
+          const ce = item.CE || {};
+          const pe = item.PE || {};
+          tableHtml += `
+            <tr>
+              <td>${ce.openInterest || '-'}</td>
+              <td>${ce.changeinOpenInterest || '-'}</td>
+              <td>${ce.impliedVolatility || '-'}</td>
+              <td>${ce.lastPrice || '-'}</td>
+              <td class="${(ce.change || 0) >= 0 ? 'text-success' : 'text-danger'}">${ce.change || '-'}</td>
+              <th class="bg-light">${item.strikePrice}</th>
+              <td class="${(pe.change || 0) >= 0 ? 'text-success' : 'text-danger'}">${pe.change || '-'}</td>
+              <td>${pe.lastPrice || '-'}</td>
+              <td>${pe.impliedVolatility || '-'}</td>
+              <td>${pe.changeinOpenInterest || '-'}</td>
+              <td>${pe.openInterest || '-'}</td>
+            </tr>
+          `;
+        });
+
+        tableHtml += '</tbody></table>';
+        tableContainer.innerHTML = tableHtml;
+      }
+
+      function renderWatchlist(data) {
+        const tbody = document.getElementById('watchlist-body');
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">No stocks met the watchlist criteria.</td></tr>';
+            return;
+        }
+
+        let rowsHtml = '';
+        data.forEach(stock => {
+            rowsHtml += `
+                <tr>
+                    <td>${stock.symbol}</td>
+                    <td>${stock.reason}</td>
+                    <td>${stock.currentPrice}</td>
+                    <td>${stock.volume}</td>
+                    <td>${stock.oiChange}</td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = rowsHtml;
+      }
+
+      // Fetch watchlist and index quotes on page load
+      window.addEventListener('DOMContentLoaded', () => {
+        // Fetch Watchlist
+        const tbody = document.getElementById('watchlist-body');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">Loading watchlist...</td></tr>';
+        fetch('/api/watchlist')
+            .then(response => response.json())
+            .then(data => renderWatchlist(data))
+            .catch(error => {
+                console.error('Error fetching watchlist:', error);
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Failed to load watchlist.</td></tr>';
+            });
+
+        // Fetch Index Quotes
+        fetch('/api/index-quotes')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                updateIndexCard('nifty50-card', data.nifty50);
+                updateIndexCard('banknifty-card', data.banknifty);
+            })
+            .catch(error => {
+                console.error('Error fetching index quotes:', error);
+                document.getElementById('nifty50-card').innerHTML = '<p class="text-danger">Failed to load.</p>';
+                document.getElementById('banknifty-card').innerHTML = '<p class="text-danger">Failed to load.</p>';
+            });
+      });
+
+      function updateIndexCard(cardId, data) {
+          const card = document.getElementById(cardId);
+          const changeClass = data.change >= 0 ? 'text-success' : 'text-danger';
+          card.innerHTML = `
+            <h5 class="card-title">${data.lastPrice.toLocaleString('en-IN')}</h5>
+            <p class="card-text ${changeClass}">
+                ${data.change.toFixed(2)} (${data.pChange.toFixed(2)}%)
+            </p>
+          `;
+      }
+    </script>
+  </body>
+</html>
